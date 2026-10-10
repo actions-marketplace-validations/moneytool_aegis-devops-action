@@ -1,5 +1,5 @@
 name: Aegis-DevOps Plan Check
-description: Check a Terraform or OpenTofu plan against signed, authority-checked policy before it is applied
+description: Check a Terraform or OpenTofu plan against signed, authority-checked policy before it is applied; cap what coding agents spend in a workflow
 author: Vamshidher Reddy Jannapu Reddy
 branding:
   icon: shield
@@ -10,8 +10,10 @@ inputs:
     description: >
       Path to the plan. A JSON plan (from `terraform show -json tfplan`) is checked as is.
       A binary plan file is converted with `<tool> show -json` first, which needs the tool on
-      PATH and an initialised working directory.
-    required: true
+      PATH and an initialised working directory. Required unless `budget` is `setup` or
+      `report`.
+    required: false
+    default: ""
   tool:
     description: "`terraform` or `tofu`. Selects the plan schema label and the binary used to convert a binary plan."
     required: false
@@ -50,6 +52,20 @@ inputs:
     description: Version of the aegis-devops package to install from PyPI.
     required: false
     default: "1.0.0"
+  budget:
+    description: >
+      The session budget cap for coding agents run in this job. `off` (default) checks a plan.
+      `setup`, before the step that runs an agent: checks that the policy directory holds a
+      usable signed budget.yaml and installs aegis's hooks for `agents` in the runner's home
+      directory. `report`, after it (with `if: always()`): totals the agents' sessions from
+      their logs, writes the job summary (and a pull request comment), and fails per `fail-on`
+      (`block`: a limit was reached; `escalate`: also near one).
+    required: false
+    default: "off"
+  agents:
+    description: "With `budget: setup`: comma-separated agents to install the budget hooks for: claude, codex, gemini, opencode, copilot."
+    required: false
+    default: claude
   python-version:
     description: Python version to run Aegis with (3.11 or later).
     required: false
@@ -65,6 +81,12 @@ outputs:
   report:
     description: Path to the full JSON-lines report from `aegis check`.
     value: ${{ steps.check.outputs.report }}
+  budget-decision:
+    description: "With `budget`: allow, warn or deny (error if the budget could not be read)."
+    value: ${{ steps.budget.outputs.budget-decision }}
+  budget-status:
+    description: "With `budget: report`: path to the JSON from `aegis budget status`."
+    value: ${{ steps.budget.outputs.budget-status }}
 
 runs:
   using: composite
@@ -89,6 +111,7 @@ runs:
 
     - name: Check plan
       id: check
+      if: inputs.budget == 'off' || inputs.budget == ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -101,3 +124,20 @@ runs:
         INPUT_SIGNING_KEY: ${{ inputs.signing-key }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: '"$RUNNER_TEMP/aegis-venv/bin/python" "$GITHUB_ACTION_PATH/aegis_action.py"'
+
+    - name: Budget
+      id: budget
+      if: inputs.budget != 'off' && inputs.budget != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AEGIS_BIN: ${{ runner.temp }}/aegis-venv/bin/aegis
+        INPUT_BUDGET: ${{ inputs.budget }}
+        INPUT_AGENTS: ${{ inputs.agents }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_CONFIG_DIR: ${{ inputs.config-dir }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_SIGNING_KEY: ${{ inputs.signing-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: '"$RUNNER_TEMP/aegis-venv/bin/python" "$GITHUB_ACTION_PATH/aegis_budget.py"'

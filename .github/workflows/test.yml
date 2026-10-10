@@ -81,3 +81,90 @@ jobs:
 
       - name: Assert result
         run: test "${{ steps.check.outputs.verdict }}" = ALLOW
+
+  budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy with a signed budget
+        run: |
+          pipx run --spec aegis-devops==1.0.0 aegis init .aegis
+          printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.0.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+
+      - name: Budget setup
+        id: setup
+        uses: ./
+        with:
+          budget: setup
+          agents: claude,codex
+
+      - name: Stand-in for an agent run (a Claude Code session over the limit, then one tool call)
+        id: agent
+        run: |
+          set -euo pipefail
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          log="$HOME/.claude/projects/-ws/s1.jsonl"
+          mkdir -p "$(dirname "$log")"
+          printf '{"type":"user","sessionId":"s1","cwd":"%s","timestamp":"%s"}\n' "$PWD" "$now" > "$log"
+          printf '{"type":"assistant","sessionId":"s1","requestId":"r","timestamp":"%s","message":{"id":"m","model":"claude-opus-5-5","usage":{"input_tokens":5000,"output_tokens":10}}}\n' "$now" >> "$log"
+          jq -e '.hooks.PreToolUse[0].matcher == "*" and (.hooks.UserPromptSubmit | length) == 1' "$HOME/.claude/settings.json"
+          payload="$(jq -nc --arg cwd "$PWD" --arg t "$log" '{session_id:"s1",cwd:$cwd,tool_name:"Edit",tool_input:{},transcript_path:$t}')"
+          set +e
+          printf '%s' "$payload" | "$RUNNER_TEMP/aegis-venv/bin/aegis" hook claude
+          echo "hook=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Budget report (over the limit, fails)
+        id: report
+        if: always()
+        continue-on-error: true
+        uses: ./
+        with:
+          budget: report
+
+      - name: Budget report (fail-on never)
+        id: report-never
+        uses: ./
+        with:
+          budget: report
+          fail-on: never
+          comment: "false"
+
+      - name: Assert results
+        env:
+          SETUP: ${{ steps.setup.outputs.budget-decision }}
+          HOOK: ${{ steps.agent.outputs.hook }}
+          REPORT: ${{ steps.report.outputs.budget-decision }}
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+          NEVER: ${{ steps.report-never.outputs.budget-decision }}
+          STATUS: ${{ steps.report-never.outputs.budget-status }}
+        run: |
+          set -x
+          test "$SETUP" = allow
+          test "$HOOK" = 2
+          test "$REPORT" = deny
+          test "$REPORT_OUTCOME" = failure
+          test "$NEVER" = deny
+          jq -e '.sessions[0].level == "deny"' "$STATUS"
+
+  budget-missing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy without a budget
+        run: pipx run --spec aegis-devops==1.0.0 aegis init .aegis
+
+      - name: Budget setup without budget.yaml fails
+        id: setup
+        continue-on-error: true
+        uses: ./
+        with:
+          budget: setup
+
+      - name: Assert
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+          DECISION: ${{ steps.setup.outputs.budget-decision }}
+        run: test "$OUTCOME" = failure && test "$DECISION" = error
