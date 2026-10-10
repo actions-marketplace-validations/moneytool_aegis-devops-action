@@ -96,7 +96,7 @@ jobs:
 | `comment` | `true` | Post or update a pull request comment. Needs `pull-requests: write`. Without it you get a warning, not a failure. |
 | `signing-key` | (empty) | Key the policy files are signed with, from a secret. Empty falls back to `$AEGIS_SIGNING_KEY`, then the example key from `aegis init`. |
 | `github-token` | `github.token` | Token for the comment. |
-| `aegis-version` | `0.3.1` | aegis-devops version installed from PyPI. |
+| `aegis-version` | `1.0.0` | aegis-devops version installed from PyPI. |
 | `python-version` | `3.12` | Python used to run Aegis (3.11+). |
 
 ## Outputs
