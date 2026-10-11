@@ -177,7 +177,8 @@ def github(method: str, url: str, token: str, body: dict | None = None):
         return json.loads(text) if text else None
 
 
-def post_comment(markdown: str) -> None:
+def post_comment(markdown: str, marker: str = MARKER) -> None:
+    """Posts or updates this run's pull request comment, found again by its ``marker``."""
     number, token = pr_number(), env("GITHUB_TOKEN")
     repo, api = env("GITHUB_REPOSITORY"), env("GITHUB_API_URL", "https://api.github.com")
     if not number or not token or not repo:
@@ -187,7 +188,7 @@ def post_comment(markdown: str) -> None:
         existing = None
         for page in range(1, 6):
             comments = github("GET", f"{base}/{number}/comments?per_page=100&page={page}", token)
-            existing = next((c for c in comments if MARKER in (c.get("body") or "")), None)
+            existing = next((c for c in comments if marker in (c.get("body") or "")), None)
             if existing or len(comments) < 100:
                 break
         if existing:

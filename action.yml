@@ -134,7 +134,6 @@ runs:
         AEGIS_BIN: ${{ runner.temp }}/aegis-venv/bin/aegis
         INPUT_BUDGET: ${{ inputs.budget }}
         INPUT_AGENTS: ${{ inputs.agents }}
-        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
         INPUT_CONFIG_DIR: ${{ inputs.config-dir }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}

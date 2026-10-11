@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aegis_action import annotate, env, github, pr_number, set_output, write_summary
+from aegis_action import annotate, env, post_comment, set_output, write_summary
 
 AGENTS = ("claude", "codex", "gemini", "opencode", "copilot")
 MARKER = "<!-- aegis-devops-budget -->"
@@ -48,18 +48,35 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def key_args() -> list[str]:
-    key = env("INPUT_SIGNING_KEY")
-    return ["--key", key] if key else []
+def child_env() -> dict[str, str]:
+    """The environment for aegis: the signing key goes in AEGIS_SIGNING_KEY (never on the
+    command line, where other processes can read it), and the GitHub token is left out."""
+    child = dict(os.environ)
+    key = child.pop("INPUT_SIGNING_KEY", "").strip()
+    if key:
+        child["AEGIS_SIGNING_KEY"] = key
+    child.pop("GITHUB_TOKEN", None)
+    return child
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([aegis(), *args], capture_output=True, text=True, check=False)
+    return subprocess.run([aegis(), *args], capture_output=True, text=True, check=False,
+                          env=child_env())
+
+
+def require_project(project: str) -> None:
+    """Budget totals are kept per project: the directory that holds `.aegis/`, here or
+    above. A policy found only through `config-dir` elsewhere has no project to total."""
+    start = Path(project)
+    if not any((d / ".aegis").is_dir() for d in (start, *start.parents)):
+        fail(f"no `.aegis/` directory in {project} or above: the budget totals sessions per "
+             "project, so the working directory must be inside the repository's policy "
+             "project (run `aegis init .aegis` there)")
 
 
 def status(project: str) -> dict:
     """`aegis budget status --json`, or a failed step saying why not."""
-    proc = run("budget", "status", "--project", project, "--json", *key_args())
+    proc = run("budget", "status", "--project", project, "--json")
     if proc.returncode != 0:
         hint = EXIT_HINTS.get(proc.returncode, "unexpected error")
         last = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else ""
@@ -83,9 +100,11 @@ def fmt(unit: str, amount: float | None) -> str:
 
 def report_markdown(st: dict) -> str:
     decision = st["decision"]
-    over = [s for s in st["sessions"] if s["level"] == "deny"]
-    if over and decision != "deny":
+    levels = {s["level"] for s in st["sessions"]}
+    if "deny" in levels:
         decision = "deny"
+    elif "warn" in levels and decision == "allow":
+        decision = "warn"
     lines = [MARKER, f"## {ICON[decision]} Aegis-DevOps budget: {decision.upper()}", ""]
     unit = st["unit"]
     pd = st.get("project_day")
@@ -116,35 +135,14 @@ def report_markdown(st: dict) -> str:
     return "\n".join(lines), decision
 
 
-def post_comment(markdown: str) -> None:
-    number, token = pr_number(), env("GITHUB_TOKEN")
-    repo, api = env("GITHUB_REPOSITORY"), env("GITHUB_API_URL", "https://api.github.com")
-    if not number or not token or not repo:
-        return
-    base = f"{api}/repos/{repo}/issues"
-    try:
-        existing = None
-        for page in range(1, 6):
-            comments = github("GET", f"{base}/{number}/comments?per_page=100&page={page}", token)
-            existing = next((c for c in comments if MARKER in (c.get("body") or "")), None)
-            if existing or len(comments) < 100:
-                break
-        if existing:
-            github("PATCH", f"{base}/comments/{existing['id']}", token, {"body": markdown})
-        else:
-            github("POST", f"{base}/{number}/comments", token, {"body": markdown})
-    except Exception as exc:  # noqa: BLE001 - a comment is best effort
-        annotate("warning", f"could not post the pull request comment ({exc}). "
-                 "Grant `pull-requests: write`, or set `comment: false`.")
-
-
 def setup(project: str) -> None:
+    require_project(project)
     agents = [a.strip() for a in env("INPUT_AGENTS", "claude").split(",") if a.strip()]
     unknown = [a for a in agents if a not in AGENTS]
     if not agents or unknown:
         fail(f"`agents` must list some of {', '.join(AGENTS)}"
              + (f"; unknown: {', '.join(unknown)}" if unknown else ""))
-    check = run("budget", "check", "--project", project, *key_args())
+    check = run("budget", "check", "--project", project)
     if check.returncode not in (0, 3):
         hint = EXIT_HINTS.get(check.returncode, "unexpected error")
         last = check.stderr.strip().splitlines()[-1] if check.stderr.strip() else ""
@@ -175,6 +173,7 @@ def report(project: str) -> None:
     fail_on = env("INPUT_FAIL_ON", "block").lower()
     if fail_on not in ("block", "escalate", "never"):
         fail(f"`fail-on` must be `block`, `escalate` or `never`, not `{fail_on}`")
+    require_project(project)
     st = status(project)
     path = Path(env("RUNNER_TEMP", "/tmp")) / "aegis-budget.json"
     path.write_text(json.dumps(st, indent=2), encoding="utf-8")
@@ -183,7 +182,7 @@ def report(project: str) -> None:
     set_output("budget-status", str(path))
     write_summary(markdown)
     if env("INPUT_COMMENT", "true").lower() == "true":
-        post_comment(markdown)
+        post_comment(markdown, MARKER)
     print(f"Aegis-DevOps budget: {decision}")
     failing = {"block": {"deny"}, "escalate": {"deny", "warn"}, "never": set()}[fail_on]
     if decision in failing:
@@ -191,6 +190,9 @@ def report(project: str) -> None:
         reasons += [f"{s['agent']} session {s['session_id']} reached its limit: "
                     f"{fmt(s['unit'], s['total'])} of {fmt(s['unit'], s['limit'])}"
                     for s in st["sessions"] if s["level"] == "deny"]
+        reasons += [f"{s['agent']} session {s['session_id']} is near its limit: "
+                    f"{fmt(s['unit'], s['total'])} of {fmt(s['unit'], s['limit'])}"
+                    for s in st["sessions"] if s["level"] == "warn"]
         annotate("error", f"budget {decision}: " + "; ".join(reasons))
         sys.exit(1)
 
@@ -199,7 +201,9 @@ def main() -> None:
     if env("INPUT_SIGNING_KEY"):
         print(f"::add-mask::{env('INPUT_SIGNING_KEY')}")
     mode = env("INPUT_BUDGET").lower()
-    project = str(Path(env("INPUT_WORKING_DIRECTORY", ".")).resolve())
+    # the step already runs in `working-directory` (action.yml); resolving that input again
+    # from here would apply it twice
+    project = str(Path.cwd())
     config_dir = env("INPUT_CONFIG_DIR")
     if config_dir:
         # aegis budget, and the hooks in later steps, find the policy through this
