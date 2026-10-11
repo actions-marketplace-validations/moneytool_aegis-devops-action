@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==0.3.1 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.0.0 aegis init .aegis
 
       - name: Allowed plan
         id: allow
@@ -64,7 +64,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==0.3.1 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.0.0 aegis init .aegis
 
       - name: Terraform plan
         working-directory: tests/tf
