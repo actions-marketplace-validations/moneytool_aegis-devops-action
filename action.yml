@@ -66,6 +66,15 @@ inputs:
     description: "With `budget: setup`: comma-separated agents to install the budget hooks for: claude, codex, gemini, opencode, copilot."
     required: false
     default: claude
+  escalate-scripts:
+    description: >
+      With `budget: setup`: `true` installs the hooks with aegis's `--escalate-scripts`, so a
+      command that runs code aegis cannot read (a script file, `make` or `npm run`, inline or
+      piped code) is escalated: Codex, Gemini CLI and OpenCode block it; Claude Code and
+      Copilot CLI get an "ask", which a headless run handles per its permission mode. Needs
+      aegis-devops 1.2.0 or later. Default `false`.
+    required: false
+    default: "false"
   python-version:
     description: Python version to run Aegis with (3.11 or later).
     required: false
@@ -134,6 +143,7 @@ runs:
         AEGIS_BIN: ${{ runner.temp }}/aegis-venv/bin/aegis
         INPUT_BUDGET: ${{ inputs.budget }}
         INPUT_AGENTS: ${{ inputs.agents }}
+        INPUT_ESCALATE_SCRIPTS: ${{ inputs.escalate-scripts }}
         INPUT_CONFIG_DIR: ${{ inputs.config-dir }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT: ${{ inputs.comment }}

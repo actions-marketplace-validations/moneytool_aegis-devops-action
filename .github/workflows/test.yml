@@ -214,3 +214,58 @@ jobs:
           test "$SETUP" = allow
           test "$REPORT" = allow
           jq -e --arg p "$PWD/sub" '.project == $p' "$STATUS"
+
+  budget-escalate-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy with a signed budget
+        run: |
+          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+          printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+
+      - name: Budget setup with escalate-scripts
+        uses: ./
+        with:
+          budget: setup
+          agents: claude,codex
+          escalate-scripts: "true"
+          aegis-version: "1.2.0"
+
+      - name: The hooks carry --escalate-scripts and stop a script run
+        run: |
+          set -euo pipefail
+          jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook claude -- --escalate-scripts")' "$HOME/.claude/settings.json"
+          jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook codex -- --escalate-scripts")' "$HOME/.codex/hooks.json"
+          cmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HOME/.claude/settings.json")"
+          payload="$(jq -nc --arg cwd "$PWD" '{session_id:"s1",cwd:$cwd,tool_name:"Bash",tool_input:{command:"bash nuke.sh"}}')"
+          out="$(printf '%s' "$payload" | eval "$cmd")"
+          echo "$out"
+          echo "$out" | jq -e '.hookSpecificOutput.permissionDecision == "ask"'
+
+  budget-escalate-scripts-old-aegis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy with a signed budget
+        run: |
+          pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+          printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.1.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+
+      - name: escalate-scripts with aegis-devops 1.1.0 (fails with a clear message)
+        id: setup
+        continue-on-error: true
+        uses: ./
+        with:
+          budget: setup
+          escalate-scripts: "true"
+          aegis-version: "1.1.0"
+
+      - name: Assert it failed
+        run: |
+          test "${{ steps.setup.outcome }}" = failure
+          test "${{ steps.setup.outputs.budget-decision }}" = error

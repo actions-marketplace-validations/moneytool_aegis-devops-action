@@ -142,6 +142,10 @@ def setup(project: str) -> None:
     if not agents or unknown:
         fail(f"`agents` must list some of {', '.join(AGENTS)}"
              + (f"; unknown: {', '.join(unknown)}" if unknown else ""))
+    escalate = env("INPUT_ESCALATE_SCRIPTS", "false").strip().lower()
+    if escalate not in ("true", "false"):
+        fail(f"`escalate-scripts` must be `true` or `false`, not `{escalate}`")
+    extra = ["--escalate-scripts"] if escalate == "true" else []
     check = run("budget", "check", "--project", project)
     if check.returncode not in (0, 3):
         hint = EXIT_HINTS.get(check.returncode, "unexpected error")
@@ -153,12 +157,20 @@ def setup(project: str) -> None:
                  "will be denied")
     installed = []
     for agent in agents:
-        proc = run("install", agent, "--user", "--budget")
+        proc = run("install", agent, "--user", "--budget", *extra)
         if proc.returncode != 0:
+            if extra and "--escalate-scripts" in proc.stderr:
+                fail("`escalate-scripts: true` needs aegis-devops 1.2.0 or later; set "
+                     "`aegis-version` to a version that has `aegis install --escalate-scripts`")
             fail(f"could not install the {agent} hook: {proc.stderr.strip() or proc.stdout}")
         installed.append(agent)
         print(proc.stdout.strip())
     notes = [AGENT_NOTES[a] for a in installed if a in AGENT_NOTES]
+    if extra:
+        notes.append("`escalate-scripts`: commands that run a script, a task runner, inline or "
+                     "piped code are escalated (Codex, Gemini CLI and OpenCode block them; "
+                     "Claude Code and Copilot CLI ask, which a headless run handles per its "
+                     "permission mode).")
     if env("INPUT_SIGNING_KEY"):
         notes.append("The hooks verify budget.yaml while the agent runs: give the agent step "
                      "`AEGIS_SIGNING_KEY` in its `env` (anything in that environment is "
