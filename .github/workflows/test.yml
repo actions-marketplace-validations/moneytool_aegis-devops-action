@@ -227,6 +227,7 @@ jobs:
           pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
 
       - name: Budget setup with escalate-scripts
+        id: setup
         uses: ./
         with:
           budget: setup
@@ -235,8 +236,11 @@ jobs:
           aegis-version: "1.2.0"
 
       - name: The hooks carry --escalate-scripts and stop a script run
+        env:
+          SETUP: ${{ steps.setup.outputs.budget-decision }}
         run: |
           set -euo pipefail
+          test "$SETUP" = allow
           jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook claude -- --escalate-scripts")' "$HOME/.claude/settings.json"
           jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook codex -- --escalate-scripts")' "$HOME/.codex/hooks.json"
           cmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HOME/.claude/settings.json")"
@@ -265,7 +269,17 @@ jobs:
           escalate-scripts: "true"
           aegis-version: "1.1.0"
 
-      - name: Assert it failed
+      - name: Assert it failed, saying which version is needed
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+          DECISION: ${{ steps.setup.outputs.budget-decision }}
         run: |
-          test "${{ steps.setup.outcome }}" = failure
-          test "${{ steps.setup.outputs.budget-decision }}" = error
+          set -euo pipefail
+          test "$OUTCOME" = failure
+          test "$DECISION" = error
+          # the same setup again, with the 1.1.0 the step installed, to read its message
+          out="$(AEGIS_BIN="$RUNNER_TEMP/aegis-venv/bin/aegis" INPUT_BUDGET=setup INPUT_AGENTS=claude \
+            INPUT_ESCALATE_SCRIPTS=true GITHUB_OUTPUT=/dev/null GITHUB_STEP_SUMMARY=/dev/null \
+            "$RUNNER_TEMP/aegis-venv/bin/python" "$GITHUB_WORKSPACE/aegis_budget.py" 2>&1 || true)"
+          echo "$out"
+          grep -q "needs aegis-devops 1.2.0 or later" <<<"$out"

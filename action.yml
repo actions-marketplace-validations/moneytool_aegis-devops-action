@@ -68,11 +68,12 @@ inputs:
     default: claude
   escalate-scripts:
     description: >
-      With `budget: setup`: `true` installs the hooks with aegis's `--escalate-scripts`, so a
+      With `budget: setup` (ignored otherwise): `true` installs the hooks with aegis's
+      `--escalate-scripts`, so a
       command that runs code aegis cannot read (a script file, `make` or `npm run`, inline or
       piped code) is escalated: Codex, Gemini CLI and OpenCode block it; Claude Code and
-      Copilot CLI get an "ask", which a headless run handles per its permission mode. Needs
-      aegis-devops 1.2.0 or later. Default `false`.
+      Copilot CLI get an "ask", which is not guaranteed to block in a headless run. Needs
+      aegis-devops 1.2.0 or later (set `aegis-version`). Default `false`.
     required: false
     default: "false"
   python-version:
