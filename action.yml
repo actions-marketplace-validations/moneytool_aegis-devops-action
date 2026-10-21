@@ -51,7 +51,7 @@ inputs:
   aegis-version:
     description: Version of the aegis-devops package to install from PyPI.
     required: false
-    default: "1.1.0"
+    default: "1.2.0"
   budget:
     description: >
       The session budget cap for coding agents run in this job. `off` (default) checks a plan.
@@ -73,7 +73,7 @@ inputs:
       command that runs code aegis cannot read (a script file, `make` or `npm run`, inline or
       piped code) is escalated: Codex, Gemini CLI and OpenCode block it; Claude Code and
       Copilot CLI get an "ask", which is not guaranteed to block in a headless run. Needs
-      aegis-devops 1.2.0 or later (set `aegis-version`). Default `false`.
+      aegis-devops 1.2.0 or later (the default). Default `false`.
     required: false
     default: "false"
   python-version:
