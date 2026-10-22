@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
 
       - name: Allowed plan
         id: allow
@@ -64,7 +64,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
 
       - name: Terraform plan
         working-directory: tests/tf
@@ -89,9 +89,9 @@ jobs:
 
       - name: Example policy with a signed budget
         run: |
-          pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
           printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
-          pipx run --spec aegis-devops==1.1.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
 
       - name: Budget setup
         id: setup
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Example policy without a budget
-        run: pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
 
       - name: Budget setup without budget.yaml fails
         id: setup
@@ -181,9 +181,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir sub && cd sub
-          pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
           printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
-          pipx run --spec aegis-devops==1.1.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
           echo "key=$(grep -v '^#' .aegis/example-signing.key | tr -d ' \n')" >> "$GITHUB_OUTPUT"
           mv .aegis/example-signing.key "$RUNNER_TEMP/"
 
@@ -214,3 +214,72 @@ jobs:
           test "$SETUP" = allow
           test "$REPORT" = allow
           jq -e --arg p "$PWD/sub" '.project == $p' "$STATUS"
+
+  budget-escalate-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy with a signed budget
+        run: |
+          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+          printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+
+      - name: Budget setup with escalate-scripts
+        id: setup
+        uses: ./
+        with:
+          budget: setup
+          agents: claude,codex
+          escalate-scripts: "true"
+          aegis-version: "1.2.0"
+
+      - name: The hooks carry --escalate-scripts and stop a script run
+        env:
+          SETUP: ${{ steps.setup.outputs.budget-decision }}
+        run: |
+          set -euo pipefail
+          test "$SETUP" = allow
+          jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook claude -- --escalate-scripts")' "$HOME/.claude/settings.json"
+          jq -e '.hooks.PreToolUse[0].hooks[0].command | endswith("hook codex -- --escalate-scripts")' "$HOME/.codex/hooks.json"
+          cmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HOME/.claude/settings.json")"
+          payload="$(jq -nc --arg cwd "$PWD" '{session_id:"s1",cwd:$cwd,tool_name:"Bash",tool_input:{command:"bash nuke.sh"}}')"
+          out="$(printf '%s' "$payload" | eval "$cmd")"
+          echo "$out"
+          echo "$out" | jq -e '.hookSpecificOutput.permissionDecision == "ask"'
+
+  budget-escalate-scripts-old-aegis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Example policy with a signed budget
+        run: |
+          pipx run --spec aegis-devops==1.1.0 aegis init .aegis
+          printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.1.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+
+      - name: escalate-scripts with aegis-devops 1.1.0 (fails with a clear message)
+        id: setup
+        continue-on-error: true
+        uses: ./
+        with:
+          budget: setup
+          escalate-scripts: "true"
+          aegis-version: "1.1.0"
+
+      - name: Assert it failed, saying which version is needed
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+          DECISION: ${{ steps.setup.outputs.budget-decision }}
+        run: |
+          set -euo pipefail
+          test "$OUTCOME" = failure
+          test "$DECISION" = error
+          # the same setup again, with the 1.1.0 the step installed, to read its message
+          out="$(AEGIS_BIN="$RUNNER_TEMP/aegis-venv/bin/aegis" INPUT_BUDGET=setup INPUT_AGENTS=claude \
+            INPUT_ESCALATE_SCRIPTS=true GITHUB_OUTPUT=/dev/null GITHUB_STEP_SUMMARY=/dev/null \
+            "$RUNNER_TEMP/aegis-venv/bin/python" "$GITHUB_WORKSPACE/aegis_budget.py" 2>&1 || true)"
+          echo "$out"
+          grep -q "needs aegis-devops 1.2.0 or later" <<<"$out"
