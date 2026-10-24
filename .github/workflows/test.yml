@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.1 aegis init .aegis
 
       - name: Allowed plan
         id: allow
@@ -64,7 +64,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Example policy
-        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.1 aegis init .aegis
 
       - name: Terraform plan
         working-directory: tests/tf
@@ -89,9 +89,9 @@ jobs:
 
       - name: Example policy with a signed budget
         run: |
-          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+          pipx run --spec aegis-devops==1.2.1 aegis init .aegis
           printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
-          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.1 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
 
       - name: Budget setup
         id: setup
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Example policy without a budget
-        run: pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+        run: pipx run --spec aegis-devops==1.2.1 aegis init .aegis
 
       - name: Budget setup without budget.yaml fails
         id: setup
@@ -181,9 +181,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir sub && cd sub
-          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+          pipx run --spec aegis-devops==1.2.1 aegis init .aegis
           printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
-          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.1 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
           echo "key=$(grep -v '^#' .aegis/example-signing.key | tr -d ' \n')" >> "$GITHUB_OUTPUT"
           mv .aegis/example-signing.key "$RUNNER_TEMP/"
 
@@ -222,9 +222,9 @@ jobs:
 
       - name: Example policy with a signed budget
         run: |
-          pipx run --spec aegis-devops==1.2.0 aegis init .aegis
+          pipx run --spec aegis-devops==1.2.1 aegis init .aegis
           printf 'principal: admin\nunit: tokens\nsession: {limit: 1000}\nproject_day: {limit: 100000}\n' > .aegis/budget.yaml
-          pipx run --spec aegis-devops==1.2.0 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
+          pipx run --spec aegis-devops==1.2.1 aegis sign --key file:.aegis/example-signing.key .aegis/budget.yaml
 
       - name: Budget setup with escalate-scripts
         id: setup

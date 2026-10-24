@@ -96,7 +96,7 @@ jobs:
 | `comment` | `true` | Post or update a pull request comment. Needs `pull-requests: write`. Without it you get a warning, not a failure. |
 | `signing-key` | (empty) | Key the policy files are signed with, from a secret. Empty falls back to `$AEGIS_SIGNING_KEY`, then the example key from `aegis init`. |
 | `github-token` | `github.token` | Token for the comment. |
-| `aegis-version` | `1.2.0` | aegis-devops version installed from PyPI. |
+| `aegis-version` | `1.2.1` | aegis-devops version installed from PyPI. |
 | `budget` | `off` | `setup` / `report`: the session budget cap for coding agents in this job ([below](#budget-cap-for-coding-agents-in-a-workflow)). `off` checks a plan. |
 | `agents` | `claude` | With `budget: setup`: comma-separated agents to install the budget hooks for (`claude`, `codex`, `gemini`, `opencode`, `copilot`). |
 | `escalate-scripts` | `false` | With `budget: setup` (ignored otherwise): install the hooks with `--escalate-scripts`. Commands that run code aegis cannot read (scripts, `make`/`npm run`, inline or piped code) are escalated: blocked in Codex, Gemini CLI and OpenCode; an "ask" in Claude Code and Copilot CLI, which is not guaranteed to block in a headless run. Needs aegis-devops 1.2.0+ (the default). |

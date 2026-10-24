@@ -51,7 +51,7 @@ inputs:
   aegis-version:
     description: Version of the aegis-devops package to install from PyPI.
     required: false
-    default: "1.2.0"
+    default: "1.2.1"
   budget:
     description: >
       The session budget cap for coding agents run in this job. `off` (default) checks a plan.
